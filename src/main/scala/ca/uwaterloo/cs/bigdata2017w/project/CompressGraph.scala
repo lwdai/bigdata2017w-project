@@ -112,6 +112,10 @@ object CompressGraph {
     Graph.fromEdges(edges, 0)
   }
 
+  def loadCompressedGraph( path: String, sc: SparkContext ): Graph[Int, Int] = {
+    decompress(sc.objectFile( path ))
+  }
+
   /**
    * For test on small cases only!
    */
@@ -136,10 +140,11 @@ object CompressGraph {
     val outputDir = new Path(args.output())
     FileSystem.get(sc.hadoopConfiguration).delete(outputDir, true)
 
+    val compressedGraph = compress(graph)
+    compressedGraph.saveAsObjectFile(args.output())
+
     if (args.localtest()) {
       // Decompress the graph to verify correctness.
-      val compressedGraph = compress(graph)
-      compressedGraph.saveAsObjectFile(args.output())
 
       val decompressedGraph = decompress(sc.objectFile(args.output()))
       val recoverPath = new Path( args.output() + "-recover" )
