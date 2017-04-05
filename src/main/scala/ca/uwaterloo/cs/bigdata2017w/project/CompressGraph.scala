@@ -89,7 +89,8 @@ object CompressGraph {
      * Now every line is a unique vertexId followd by a sorted list of its out-neighbours.
      * This reduces the text file size by about a half.
      */
-    graph.collectNeighborIds(EdgeDirection.Out).
+    graph.triplets.map( e => (e.srcId, e.dstId) ).groupByKey().map( kv => (kv._1, kv._2.toArray) ).
+    //graph.collectNeighborIds(EdgeDirection.Out).
 
     // Now compress the each list of out neighbours
     mapPartitions( iter => {
@@ -143,7 +144,7 @@ object CompressGraph {
 
     log.info("Input: " + args.input())
 
-    val conf = new SparkConf().setAppName("Train Spam Classifier")
+    val conf = new SparkConf().setAppName("Compress Graph")
     val sc = new SparkContext(conf)
 
     val graph: Graph[Int, Int] = GraphLoader.edgeListFile(sc, args.input()).cache()
@@ -167,12 +168,12 @@ object CompressGraph {
       decompressedGraph.edges.sortBy( e => (e.srcId, e.dstId), true, 1 ).map( e => e.srcId + " " + e.dstId )
         .saveAsTextFile(args.output() + "-recover")
 
-      /*
-      if ( graphEqual(graph, decompressedGraph ) ) {
-        println("Compression/decompression test passed.")
-      } else {
-        println("Compression/decompression test failed.")
-      } */
+
+      //if ( graphEqual(graph, decompressedGraph ) ) {
+      //  println("Compression/decompression test passed.")
+      //} else {
+      //  println("Compression/decompression test failed.")
+      // }
       println("Please check the decompressed graph output at " + args.output() + "-recover" )
     }
 
