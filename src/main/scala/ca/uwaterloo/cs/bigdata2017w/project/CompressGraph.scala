@@ -50,10 +50,9 @@ class CompressGraphConfig(args: Seq[String]) extends ScallopConf(args) with Toke
 object CompressGraph {
   val log = Logger.getLogger(getClass().getName())
 
-  def encodeSeq( lst: Seq[Long] ): Array[Byte] = {
-    val aos = new ByteArrayOutputStream()
-    val dos = new DataOutputStream(aos)
+  def encodeSeq( lst: Seq[Long], aos: ByteArrayOutputStream, dos: DataOutputStream  ): Array[Byte] = {
 
+    aos.reset()
     WritableUtils.writeVInt(dos, lst.size)
     if (lst.size > 0) {
       var last: Long = 0
@@ -64,6 +63,7 @@ object CompressGraph {
       })
     }
 
+    dos.flush()
     aos.toByteArray
   }
 
@@ -97,12 +97,26 @@ object CompressGraph {
     )
 
     // Now compress the each list of out neighbours
-    graphStripes.map( x => (x._1, encodeSeq(x._2.sorted)) )
+    graphStripes.mapPartitions( iter => {
+      val aos = new ByteArrayOutputStream()
+      val dos = new DataOutputStream(aos)
+      var buffer = new ListBuffer[(Long, Array[Byte])]
+
+      iter.foreach( v => {
+        val neighbours = encodeSeq( v._2, aos, dos )
+
+        buffer.append( (v._1, neighbours) )
+      })
+
+      buffer.iterator
+    } )
   }
 
   def decompress( compressed: RDD[(Long, Array[Byte])] ): Graph[Int, Int] = {
     val edges: RDD[Edge[Int]] = compressed.flatMap( v_neigbours => {
       val srcId: Long = v_neigbours._1
+
+      v_neigbours._2.toBuffer
 
       val neighbours: Seq[Long] = decodeSeq(v_neigbours._2)
 
@@ -154,11 +168,11 @@ object CompressGraph {
       decompressedGraph.edges.sortBy( e => (e.srcId, e.dstId), true, 1 ).map( e => e.srcId + " " + e.dstId )
         .saveAsTextFile(args.output() + "-recover")
 
-      if ( graphEqual(graph, decompressedGraph ) ) {
-        println("Compression/decompression test passed.")
-      } else {
-        println("Compression/decompression test failed.")
-      }
+      //if ( graphEqual(graph, decompressedGraph ) ) {
+      //  println("Compression/decompression test passed.")
+      //} else {
+      //  println("Compression/decompression test failed.")
+      //}
       println("Please check the decompressed graph output at " + args.output() + "-recover" )
     }
 
