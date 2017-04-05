@@ -135,12 +135,13 @@ object CompressGraph {
     val conf = new SparkConf().setAppName("Train Spam Classifier")
     val sc = new SparkContext(conf)
 
-    val graph: Graph[Int, Int] = GraphLoader.edgeListFile(sc, args.input())
+    val graph: Graph[Int, Int] = GraphLoader.edgeListFile(sc, args.input()).cache()
 
     val outputDir = new Path(args.output())
     FileSystem.get(sc.hadoopConfiguration).delete(outputDir, true)
 
-    val compressedGraph = compress(graph)
+    val compressedGraph = compress(graph).cache()
+    graph.unpersist()
     compressedGraph.saveAsObjectFile(args.output())
 
     if (args.localtest()) {
