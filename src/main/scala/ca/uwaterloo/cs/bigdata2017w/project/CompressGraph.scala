@@ -98,9 +98,11 @@ object CompressGraph {
       var buffer = new ListBuffer[(Long, Array[Byte])]
 
       iter.foreach( v => {
-        val neighbours = encodeSeq( v._2.sorted, aos, dos )
-
-        buffer.append( (v._1, neighbours) )
+        if (! v._2.isEmpty) {
+          // Don't store vertices that have no out-neighbours
+          val neighbours = encodeSeq( v._2.sorted, aos, dos )
+          buffer.append( (v._1, neighbours) )
+        }
       })
 
       buffer.iterator
@@ -147,9 +149,11 @@ object CompressGraph {
     val graph: Graph[Int, Int] = GraphLoader.edgeListFile(sc, args.input()).cache()
 
     val outputDir = new Path(args.output())
-    FileSystem.get(sc.hadoopConfiguration).delete(outputDir, true)
+    val deleted = FileSystem.get(sc.hadoopConfiguration).delete(outputDir, true)
 
-    val compressedGraph = compress(graph).cache()
+    if (deleted) println("output directory is deleted.")
+
+    val compressedGraph: RDD[((Long, Array[Byte]))] = compress(graph).cache()
     graph.unpersist()
     compressedGraph.saveAsObjectFile(args.output())
 
