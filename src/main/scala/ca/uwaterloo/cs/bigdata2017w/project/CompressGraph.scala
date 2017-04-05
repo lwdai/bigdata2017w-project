@@ -89,23 +89,16 @@ object CompressGraph {
      * Now every line is a unique vertexId followd by a sorted list of its out-neighbours.
      * This reduces the text file size by about a half.
      */
-    val graphStripes: RDD[(Long, Array[Long])] = graph.aggregateMessages[mutable.UnrolledBuffer[Long]](
-      triplet => {
-        triplet.sendToSrc(mutable.UnrolledBuffer(triplet.dstId))
-      },
-
-      // O(1) concat operation
-      (msg1, msg2) => (msg1.concat(msg2))
-    ).map( v => (v._1, v._2.toArray.sorted) )
+    graph.collectNeighborIds(EdgeDirection.Out).
 
     // Now compress the each list of out neighbours
-    graphStripes.mapPartitions( iter => {
+    mapPartitions( iter => {
       val aos = new ByteArrayOutputStream()
       val dos = new DataOutputStream(aos)
       var buffer = new ListBuffer[(Long, Array[Byte])]
 
       iter.foreach( v => {
-        val neighbours = encodeSeq( v._2, aos, dos )
+        val neighbours = encodeSeq( v._2.sorted, aos, dos )
 
         buffer.append( (v._1, neighbours) )
       })
@@ -170,11 +163,12 @@ object CompressGraph {
       decompressedGraph.edges.sortBy( e => (e.srcId, e.dstId), true, 1 ).map( e => e.srcId + " " + e.dstId )
         .saveAsTextFile(args.output() + "-recover")
 
+      /*
       if ( graphEqual(graph, decompressedGraph ) ) {
         println("Compression/decompression test passed.")
       } else {
         println("Compression/decompression test failed.")
-      }
+      } */
       println("Please check the decompressed graph output at " + args.output() + "-recover" )
     }
 
