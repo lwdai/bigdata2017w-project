@@ -61,7 +61,8 @@ object KBetweenness {
   def bfsSendMsg(e: EdgeTriplet[(Int, Long, Double, Double), Double]): Iterator[(VertexId, (Int, Long))] = {
     if ( e.srcAttr._1 < Integer.MAX_VALUE && e.dstAttr._1 == Integer.MAX_VALUE ) {
       // only send message if source vertex is visited and dst vertex is unvisited
-      Iterator( (e.dstId, (e.srcAttr._1, e.srcAttr._2) ), ( e.srcId, (0, 0L) )  )
+     // Iterator( (e.dstId, (e.srcAttr._1, e.srcAttr._2) ), ( e.srcId, (0, 0L) )  )
+      Iterator( (e.dstId, (e.srcAttr._1, e.srcAttr._2) ) )
     } else {
       Iterator.empty
     }
@@ -92,6 +93,17 @@ object KBetweenness {
 
   def bottomUpMergeMsg( msg1: Double, msg2: Double ): Double = {
     msg1 + msg2
+  }
+
+  def singleSrcBetweenness(graph: Graph[(Int, Long, Double, Double), Double], root: Long, maxIter: Int,
+                            outputPath: String): Unit = {
+      initBFS(graph, root).
+      // BFS
+      pregel[(Int, Long)]( (Integer.MAX_VALUE, 0), maxIter, EdgeDirection.Out)(
+        bfsVprog, bfsSendMsg, bfsMergeMsg).
+
+      pregel[Double]( 1.0, maxIter, EdgeDirection.In)(bottomUpVprog, bottomUpSendMsg, bottomUpMergeMsg)
+      .mapVertices( (vid, vd) => (vd._1, vd._2, vd._3 + vd._4, 0.0) )
   }
 
   def main(argv: Array[String]): Unit = {
