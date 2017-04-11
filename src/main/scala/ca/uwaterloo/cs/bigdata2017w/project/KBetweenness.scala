@@ -38,7 +38,7 @@ class KBetweennessConfig(args: Seq[String]) extends ScallopConf(args) with Token
 object KBetweenness {
   val log = Logger.getLogger(getClass().getName())
 
-  // VD = (depth, #SP, credit); ED = credit_acc
+  // VD = (depth, #SP, credit, tmp_credit); ED = credit
   def initBFS( graph: Graph[(Int, Long, Double, Double), Double], root: Long):
       Graph[(Int, Long, Double, Double), Double] = {
 
@@ -49,8 +49,7 @@ object KBetweenness {
         0.0) )
   }
 
-  // message = (depth of parent, number of shortest paths to root, isLeaf)
-  // If receives a message s.t. isLeaf = false, set credit to 0.0
+  // message = (depth of parent, number of shortest paths to root)
   def bfsVprog(vid: Long, vd: (Int, Long, Double, Double), msg: (Int, Long)): (Int, Long, Double, Double) = {
     ( if (vd._1 == Integer.MAX_VALUE && msg._1 < Integer.MAX_VALUE) msg._1 + 1 else vd._1,
       vd._2 + msg._2,
@@ -61,7 +60,6 @@ object KBetweenness {
   def bfsSendMsg(e: EdgeTriplet[(Int, Long, Double, Double), Double]): Iterator[(VertexId, (Int, Long))] = {
     if ( e.srcAttr._1 < Integer.MAX_VALUE && e.dstAttr._1 == Integer.MAX_VALUE ) {
       // only send message if source vertex is visited and dst vertex is unvisited
-     // Iterator( (e.dstId, (e.srcAttr._1, e.srcAttr._2) ), ( e.srcId, (0, 0L) )  )
       Iterator( (e.dstId, (e.srcAttr._1, e.srcAttr._2) ) )
     } else {
       Iterator.empty
@@ -96,14 +94,25 @@ object KBetweenness {
   }
 
   def singleSrcBetweenness(graph: Graph[(Int, Long, Double, Double), Double], root: Long, maxIter: Int,
-                            outputPath: String): Unit = {
-      initBFS(graph, root).
+                            outputPath: String): Graph[(Int, Long, Double, Double), Double] = {
+    val g = initBFS(graph, root).
       // BFS
       pregel[(Int, Long)]( (Integer.MAX_VALUE, 0), maxIter, EdgeDirection.Out)(
         bfsVprog, bfsSendMsg, bfsMergeMsg).
-
+      // pop up credit
       pregel[Double]( 1.0, maxIter, EdgeDirection.In)(bottomUpVprog, bottomUpSendMsg, bottomUpMergeMsg)
-      .mapVertices( (vid, vd) => (vd._1, vd._2, vd._3 + vd._4, 0.0) )
+      .mapVertices( (vid, vd) => (vd._1, vd._2, vd._3 + vd._4, 0.0) ).cache()
+
+    if (outputPath != null) {
+      g.vertices.map( v => v._1 + " " + v._2._1 + " " + v._2._2 + " " + v._2._3 ).saveAsTextFile(outputPath)
+    }
+    g.mapTriplets( et => {
+      val edgeCredit: Double =
+        if (et.srcAttr._1 == et.dstAttr._1 - 1) et.dstAttr._3 * et.srcAttr._2.toDouble / et.dstAttr._2.toDouble
+        else 0.0
+
+      edgeCredit + et.attr
+    } )
   }
 
   def main(argv: Array[String]): Unit = {
@@ -115,47 +124,29 @@ object KBetweenness {
     val conf = new SparkConf().setAppName("K-betweenness")
     val sc = new SparkContext(conf)
 
-    //val graph: Graph[Int, Int] = GraphLoader.edgeListFile(sc, args.input()).cache()
-
-    // VD = (depth, number of shortest paths to root, credit); ED = credit_acc
     //var graph: Graph[(Int, Long, Double), (Double, Double)] = CompressGraph.loadCompressedGraph(args.input(),
     //  sc)
     var graph: Graph[(Int, Long, Double, Double), Double] = GraphLoader.edgeListFile(sc, args.input())
       .mapVertices[(Int, Long, Double, Double)]( (vid, v) => (0, 0, 0.0, 0.0) ).
       mapEdges( e => 0.0).cache()
 
-    val outputDir = new Path(args.output())
-    val deleted = FileSystem.get(sc.hadoopConfiguration).delete(outputDir, true)
-
-    if (deleted) println("output directory is deleted.")
 
     1 to args.seeds() foreach { _ => {
-      //val root: Long = graph.pickRandomVertex()
-      //println("Picked vertexID " + root + " as root for BFS.")
-      val root = 1
+      val root: Long = graph.pickRandomVertex()
       // message = (depth of parent, number of shortest paths to root)
-      graph = initBFS(graph, root).
-        // BFS
-        pregel[(Int, Long)]( (Integer.MAX_VALUE, 0), args.diameter(), EdgeDirection.Out)(
-        bfsVprog, bfsSendMsg, bfsMergeMsg).
+      println("Using root id = " + root)
+      val path = args.output() + "-root-" + root
+      val outputDir = new Path(path)
+      val deleted = FileSystem.get(sc.hadoopConfiguration).delete(outputDir, true)
+      if (deleted) println("output directory is deleted.")
 
-        pregel[Double]( 1.0, args.diameter(), EdgeDirection.In)(bottomUpVprog, bottomUpSendMsg, bottomUpMergeMsg)
-        .mapVertices( (vid, vd) => (vd._1, vd._2, vd._3 + vd._4, 0.0) )
+      graph = singleSrcBetweenness(graph, root, args.diameter(), path)
     } }
 
-    // "vid depth #SP credit", where leaves have credit of 1
-    //graph.mapVertices( (vid, vd) =>  vd._1 + " " + vd._2 + " " + vd._3 ).vertices.saveAsTextFile(args
-    //  .output())
-/*
-    graph.triplets.map( et => {
-      val edgeCredit: Double =
-        if (et.srcAttr._1 == et.dstAttr._1 - 1) et.dstAttr._3 * et.srcAttr._2.toDouble / et.dstAttr._2.toDouble
-        else 0.0
-
-      et.srcId + " " + et.dstId + " " +
-        (edgeCredit + et.attr) } ).saveAsTextFile(args.output())
-*/
-    graph.vertices.map( v => v._1 + " " + v._2._1 + " " + v._2._2 + " " + v._2._3 ).saveAsTextFile(args.output())
+    val path = args.output()
+    val outputDir = new Path(path)
+    val deleted = FileSystem.get(sc.hadoopConfiguration).delete(outputDir, true)
+    graph.triplets.map( et => et.srcId + " " + et.dstId + " " + et.attr ).saveAsTextFile(path)
 
     sc.stop()
   }
