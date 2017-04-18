@@ -48,6 +48,7 @@ object BFS {
 
   // message = (depth of parent, number of shortest paths to root)
   def bfsVprog(vid: Long, vd: (Int, Long), msg: (Int, Long)): (Int, Long) = {
+    //if (vid == 100) println("vid 100 vprog")
     ( if (vd._1 == Integer.MAX_VALUE && msg._1 < Integer.MAX_VALUE) msg._1 + 1 else vd._1,
       vd._2 + msg._2 )
   }

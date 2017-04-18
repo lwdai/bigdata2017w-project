@@ -22,6 +22,7 @@ import org.apache.log4j._
 import org.apache.hadoop.fs._
 import org.apache.spark.SparkContext
 import org.apache.spark.SparkConf
+import org.apache.spark.graphx._
 import org.rogach.scallop._
 
 
