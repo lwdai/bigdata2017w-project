@@ -22,3 +22,5 @@ youtube. All of our work can be reached in github reposities.
 [9]
 
 > Keywords: Community Detection, Spark GraphX, Big Data
+
+> [Complete Report](https://github.com/lwdai/bigdata2017w-project/blob/568aa046349c29dd5d558e8e411f2e44590a9ab9/Report.pdf)
